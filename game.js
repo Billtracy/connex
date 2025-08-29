@@ -61,7 +61,7 @@ function drawNodes(){
 /** ====================== Game State ====================== */
 let state, winner=null, dragging=null;
 let history = []; // stack of prior states for Undo
-const BOT_ENABLED = true; // Player 2 is bot
+let botEnabled = true; // Player 2 is bot
 
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
@@ -82,6 +82,7 @@ function reset(){
   dragging = null;
   winLine.style.display='none';
   updateUI();
+  updateModeText();
   renderPieces();
   clearLog();
   log('Game started. P1 moves first.');
@@ -191,7 +192,7 @@ function minimax(s, depth, alpha, beta, maximizing){
 }
 
 function botMove(){
-  if (!BOT_ENABLED || winner || state.turn!=='p2') return;
+  if (!botEnabled || winner || state.turn!=='p2') return;
   // choose best move with shallow search (depth 4 is plenty here)
   const moves = allMoves(state,'p2');
   let bestScore = -Infinity, best = null;
@@ -220,6 +221,11 @@ function botMove(){
 /** ====================== UI & Interaction ====================== */
 function updateUI(){
   turnEl.textContent = `Turn: ${state.turn==='p1'?'Player 1 (blue)':'Player 2 (gold)'}`;
+}
+
+function updateModeText(){
+  const modeEl = document.getElementById('mode');
+  modeEl.textContent = botEnabled ? 'Mode: Human vs Bot (P2)' : 'Mode: Human vs Human';
 }
 
 function renderPieces(){
@@ -256,7 +262,7 @@ function renderPieces(){
         }
         highlight(dragging.legal,false); dragging=null; renderPieces();
         // If bot's turn, let it move after render
-        if (!winner && BOT_ENABLED && state.turn==='p2') {
+        if (!winner && botEnabled && state.turn==='p2') {
           setTimeout(botMove, 220); // tiny delay feels natural
         }
       });
@@ -317,3 +323,7 @@ function log(msg){
 drawEdges(); drawNodes(); reset();
 document.getElementById('reset').onclick = reset;
 document.getElementById('undo').onclick = undo;
+document.getElementById('mode').onclick = () => {
+  botEnabled = !botEnabled;
+  updateModeText();
+};

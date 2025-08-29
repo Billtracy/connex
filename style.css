@@ -1,0 +1,31 @@
+  :root { --bg:#0d1028; --ink:#eaeaea; --p1:#3bd1ff; --p2:#ffc04d; --hl:rgba(255,255,255,.18); }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0b0e1e;color:#eaeaea;font-family:system-ui,Segoe UI,Roboto,Arial}
+  .page{max-width:1100px;margin:24px auto;padding:0 16px;display:grid;grid-template-columns:1fr 320px;gap:16px}
+  .card{background:linear-gradient(180deg,#12142f,#1a1f56);border:1px solid rgba(255,255,255,.08);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .board-wrap{padding:16px}
+  .side{padding:16px;display:flex;flex-direction:column;gap:12px}
+  .hud{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .pill{background:rgba(255,255,255,.07);backdrop-filter:blur(6px);padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.15);font-weight:600}
+  .btn{cursor:pointer;user-select:none}
+  .btn:hover{background:rgba(255,255,255,.12)}
+  .btn:active{transform:translateY(1px)}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .title{font-weight:800;letter-spacing:.2px}
+  #board{width:100%;max-width:720px;margin:0 auto;height:auto;aspect-ratio:3/4;background:radial-gradient(ellipse at center,#0b0f23 0%,#1b1e5a 55%,#2a2e8f 100%);
+         border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.45);border:16px solid #f2f2f2}
+  svg text{font-weight:700;pointer-events:none}
+  .node{cursor:pointer}
+  .node circle{fill:#f2f2f2;stroke:#d6d6d6;stroke-width:2}
+  .node.active circle{stroke:#00e0ff;stroke-width:3}
+  .edge{stroke:#e8e8e8;stroke-width:6;stroke-linecap:round;opacity:.95}
+  .piece{cursor:grab}
+  .piece circle{stroke:#00000040;stroke-width:2}
+  .p1 circle{fill:var(--p1)}
+  .p2 circle{fill:var(--p2)}
+  .winline{stroke:#8aff8a;stroke-width:10;stroke-linecap:round;opacity:.9;filter:drop-shadow(0 0 8px #77ff77)}
+  .log{height:360px;overflow:auto;border-radius:10px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);padding:10px;font-size:13px}
+  .log b{color:#fff}
+  .small{opacity:.9;font-size:12px}
+  .sep{height:1px;background:rgba(255,255,255,.08);margin:6px 0}
+  .hint{font-size:12px;opacity:.85}

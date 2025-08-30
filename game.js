@@ -160,9 +160,26 @@ function legalTargets(s, from){
 }
 function allMoves(s, side){
   const moves = [];
+  const other = side==='p1' ? 'p2' : 'p1';
   s.pieces[side].forEach((p,idx)=>{
     for (const to of legalTargets(s,p.at)){
-      moves.push({side, idx, from:p.at, to});
+      // simulate board after move for ranking
+      const youAt = new Set(s.pieces[side].map(q=>q.at));
+      const oppAt = new Set(s.pieces[other].map(q=>q.at));
+      youAt.delete(p.at); youAt.add(to);
+
+      let rank = 0;
+      if (to === 'X') rank += 3; // center move
+      else if ((adj['X']??new Set()).has(to)) rank += 1; // toward center
+
+      for (const [a,x,b] of WINS){
+        const ya = youAt.has(a), yx = youAt.has(x), yb = youAt.has(b);
+        const oa = oppAt.has(a), ox = oppAt.has(x), ob = oppAt.has(b);
+        if (ya && yx && yb) rank += 5; // complete line
+        else if ((ya && yx && !yb && !ob) || (yx && yb && !ya && !oa)) rank += 2; // create threat
+      }
+
+      moves.push({side, idx, from:p.at, to, rank});
     }
   });
   return moves;
@@ -221,7 +238,9 @@ function scoreSide(s, side){
 function evaluate(s){ return scoreSide(s,'p2') - scoreSide(s,'p1'); } // bot is p2
 const TIMEOUT = Symbol('timeout');
 const TT = new Map(); // transposition table
+let nodesSearched = 0; // count nodes visited during search
 function minimax(s, depth, alpha, beta, maximizing, deadline){
+  nodesSearched++;
   if (deadline && performance.now() > deadline) throw TIMEOUT;
   const hash = s.hash ?? computeHash(s);
   const tt = TT.get(hash);
@@ -250,6 +269,7 @@ function minimax(s, depth, alpha, beta, maximizing, deadline){
     TT.set(hash,{depth,score:sc,flag:'exact'});
     return sc;
   }
+  moves.sort((a,b)=>b.rank - a.rank);
 
   const alphaOrig = alpha, betaOrig = beta;
   let best;
@@ -283,6 +303,8 @@ function botMove(){
   if (!botEnabled || winner || state.turn!=='p2') return;
   const moves = allMoves(state,'p2');
   if (moves.length===0) return;
+  nodesSearched = 0;
+  moves.sort((a,b)=>b.rank - a.rank);
 
   // Default to first move in case time runs out immediately
   let best = moves[0];
@@ -317,6 +339,7 @@ function botMove(){
     pushHistory();
     state = applyMove(state, best);
     log(`P2: ${best.from} → ${best.to}`);
+    log(`Nodes searched: ${nodesSearched}`);
     postMoveActions(best);
     renderPieces();
   }

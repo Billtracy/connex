@@ -22,6 +22,7 @@ const EDGES = [
 ];
 const WINS = [['A','X','E'],['G','X','C'],['H','X','D'],['B','X','F']];
 const START = { p1:['B','C','D'], p2:['H','G','F'] };
+const PIECE_SIZE = 28;
 
 const svg = document.getElementById('board');
 const edgesG = document.getElementById('edges');
@@ -264,8 +265,12 @@ function renderPieces(){
       const g=document.createElementNS('http://www.w3.org/2000/svg','g');
       g.setAttribute('class',`piece ${cls}`); g.setAttribute('data-side',who); g.setAttribute('data-index',idx);
       g.setAttribute('tabindex','0');
-      const pt=NODES[p.at]; const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
-      c.setAttribute('cx',pt.x); c.setAttribute('cy',pt.y); c.setAttribute('r',12);
+      const pt=NODES[p.at];
+      const c=document.createElementNS('http://www.w3.org/2000/svg','rect');
+      c.setAttribute('x',pt.x-PIECE_SIZE/2);
+      c.setAttribute('y',pt.y-PIECE_SIZE/2);
+      c.setAttribute('width',PIECE_SIZE);
+      c.setAttribute('height',PIECE_SIZE);
       g.appendChild(c); piecesG.appendChild(g);
 
       // Interaction only for current side and if game not over
@@ -280,7 +285,10 @@ function renderPieces(){
       g.addEventListener('pointermove',(ev)=>{
         if (!dragging||dragging.idx!==idx||dragging.who!==who) return;
         dragging.moved=true;
-        const q=svgPoint(ev); g.firstChild.setAttribute('cx',q.x); g.firstChild.setAttribute('cy',q.y);
+        const q=svgPoint(ev);
+        g.firstChild.setAttribute('x',q.x-PIECE_SIZE/2);
+        g.firstChild.setAttribute('y',q.y-PIECE_SIZE/2);
+        
       });
       g.addEventListener('pointerup',(ev)=>{
         if (!dragging||dragging.idx!==idx||dragging.who!==who) return;
@@ -356,7 +364,8 @@ function renderPieces(){
           if (best){
             kbNav.current=best;
             const pt=NODES[best];
-            g.firstChild.setAttribute('cx',pt.x); g.firstChild.setAttribute('cy',pt.y);
+            g.firstChild.setAttribute('x',pt.x-PIECE_SIZE/2);
+            g.firstChild.setAttribute('y',pt.y-PIECE_SIZE/2);
           }
         } else if (ev.key==='Enter' || ev.key===' '){
           ev.preventDefault();

@@ -71,6 +71,7 @@ function drawNodes(){
         pushHistory();
         state.pieces[tapSel.who][tapSel.idx].at = id;
         state.turn = (state.turn==='p1') ? 'p2' : 'p1';
+        updateHashAfterMove(state,{side:tapSel.who,from:tapSel.from,to:id});
         log(`${tapSel.who==='p1'?'P1':'P2'}: ${tapSel.from} → ${id}`);
         postMoveActions({side:tapSel.who,idx:tapSel.idx,from:tapSel.from,to:id});
         highlight(tapSel.legal,false);
@@ -97,14 +98,40 @@ let botTime = 1000; // ms allotted per bot move
 
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
+// Zobrist hashing
+const ZOBRIST = (() => {
+  const rand = () => Math.floor(Math.random() * 2 ** 32);
+  const table = { turn: rand() };
+  for (const id of Object.keys(NODES)) {
+    table['p1' + id] = rand();
+    table['p2' + id] = rand();
+  }
+  return table;
+})();
+
+function computeHash(s){
+  let h = s.turn === 'p2' ? ZOBRIST.turn : 0;
+  for (const p of s.pieces.p1) h ^= ZOBRIST['p1' + p.at];
+  for (const p of s.pieces.p2) h ^= ZOBRIST['p2' + p.at];
+  return h;
+}
+
+function updateHashAfterMove(s, move){
+  s.hash ^= ZOBRIST[move.side + move.from];
+  s.hash ^= ZOBRIST[move.side + move.to];
+  s.hash ^= ZOBRIST.turn;
+}
+
 function initialState(){
-  return {
+  const st = {
     turn: 'p1',
     pieces: {
       p1: START.p1.map(at=>({at})),
       p2: START.p2.map(at=>({at}))
     }
   };
+  st.hash = computeHash(st);
+  return st;
 }
 
 function reset(){
@@ -114,6 +141,7 @@ function reset(){
   dragging = null;
   tapSel = null;
   winLine.style.display='none';
+  TT.clear();
   updateUI();
   updateModeText();
   renderPieces();
@@ -141,8 +169,10 @@ function allMoves(s, side){
 }
 function applyMove(s, move){
   const ns = clone(s);
+  ns.hash = s.hash;
   ns.pieces[move.side][move.idx].at = move.to;
   ns.turn = (s.turn==='p1') ? 'p2' : 'p1';
+  updateHashAfterMove(ns, move);
   return ns;
 }
 function isWin(s){
@@ -190,21 +220,41 @@ function scoreSide(s, side){
 
 function evaluate(s){ return scoreSide(s,'p2') - scoreSide(s,'p1'); } // bot is p2
 const TIMEOUT = Symbol('timeout');
+const TT = new Map(); // transposition table
 function minimax(s, depth, alpha, beta, maximizing, deadline){
   if (deadline && performance.now() > deadline) throw TIMEOUT;
+  const hash = s.hash ?? computeHash(s);
+  const tt = TT.get(hash);
+  if (tt && tt.depth >= depth){
+    if (tt.flag === 'exact') return tt.score;
+    if (tt.flag === 'lower') alpha = Math.max(alpha, tt.score);
+    else if (tt.flag === 'upper') beta = Math.min(beta, tt.score);
+    if (alpha >= beta) return tt.score;
+  }
   const win = isWin(s);
   if (win){
-    // terminal: huge score
-    return (win.player==='p2') ? 1000 : -1000;
+    const sc = (win.player==='p2') ? 1000 : -1000;
+    TT.set(hash,{depth,score:sc,flag:'exact'});
+    return sc;
   }
-  if (depth===0) return evaluate(s);
+  if (depth===0){
+    const sc = evaluate(s);
+    TT.set(hash,{depth,score:sc,flag:'exact'});
+    return sc;
+  }
 
   const side = maximizing ? 'p2' : 'p1';
   const moves = allMoves(s, side);
-  if (moves.length===0) return evaluate(s);
+  if (moves.length===0){
+    const sc = evaluate(s);
+    TT.set(hash,{depth,score:sc,flag:'exact'});
+    return sc;
+  }
 
+  const alphaOrig = alpha, betaOrig = beta;
+  let best;
   if (maximizing){
-    let best = -Infinity;
+    best = -Infinity;
     for (const m of moves){
       const ns = applyMove(s,m);
       const val = minimax(ns, depth-1, alpha, beta, false, deadline);
@@ -212,9 +262,8 @@ function minimax(s, depth, alpha, beta, maximizing, deadline){
       alpha = Math.max(alpha, val);
       if (beta <= alpha) break;
     }
-    return best;
   } else {
-    let best = Infinity;
+    best = Infinity;
     for (const m of moves){
       const ns = applyMove(s,m);
       const val = minimax(ns, depth-1, alpha, beta, true, deadline);
@@ -222,8 +271,12 @@ function minimax(s, depth, alpha, beta, maximizing, deadline){
       beta = Math.min(beta, val);
       if (beta <= alpha) break;
     }
-    return best;
   }
+  let flag = 'exact';
+  if (best <= alphaOrig) flag = 'upper';
+  else if (best >= betaOrig) flag = 'lower';
+  TT.set(hash,{depth,score:best,flag});
+  return best;
 }
 
 function botMove(){
@@ -318,6 +371,7 @@ function renderPieces(){
           pushHistory();
           state.pieces[who][idx].at = drop;
           state.turn = (state.turn==='p1')?'p2':'p1';
+          updateHashAfterMove(state,{side:who,from:dragging.from,to:drop});
           log(`${who==='p1'?'P1':'P2'}: ${dragging.from} → ${drop}`);
           postMoveActions({side:who,idx,from:dragging.from,to:drop});
           if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
@@ -394,6 +448,7 @@ function renderPieces(){
             pushHistory();
             state.pieces[who][idx].at = kbNav.current;
             state.turn = (state.turn==='p1')?'p2':'p1';
+            updateHashAfterMove(state,{side:who,from:kbNav.from,to:kbNav.current});
             log(`${who==='p1'?'P1':'P2'}: ${kbNav.from} → ${kbNav.current}`);
             postMoveActions({side:who,idx,from:kbNav.from,to:kbNav.current});
             highlight(kbNav.legal,false);

@@ -201,11 +201,14 @@ function isWin(s){
 }
 
 /** ====================== Heuristic + Bot ====================== */
-/* Simple positional heuristic:
+/* Simple positional heuristic (weights tuned via quick self‑play):
    +6 if you own a winning line completed (terminal)
    +2 for controlling X
    +1 per your piece adjacent to X
    +2 for each "two-in-line with X" (e.g., you at A and X, empty E)
+   +0.5 per perimeter node you control
+   +4 for potential forks (one move creates two winning threats)
+   +0.2 per legal move (mobility)
    Mirror negative for opponent.
 */
 function scoreSide(s, side){
@@ -218,6 +221,10 @@ function scoreSide(s, side){
   if (youAt.has('X')) sc += 2;
   // Adjacent to X
   for (const n of (adj['X']??[])) if (youAt.has(n)) sc += 1;
+
+  // Control of perimeter nodes encourages board presence
+  for (const n of ['A','B','C','D','E','F','G','H'])
+    if (youAt.has(n)) sc += 0.5;
 
   // Two-in-line threats and completions
   for (const [a,x,b] of WINS){
@@ -232,6 +239,23 @@ function scoreSide(s, side){
     // penalize if opponent close
     if ((oa && ox && !yb) || (ox && ob && !ya)) sc -= 2;
   }
+
+  // Potential forks: empty nodes completing two lines at once
+  for (const n of Object.keys(NODES)){
+    if (youAt.has(n) || oppAt.has(n)) continue;
+    let c = 0;
+    for (const line of WINS){
+      if (!line.includes(n)) continue;
+      const [p,q] = line.filter(m=>m!==n);
+      if (youAt.has(p) && youAt.has(q)) c++;
+    }
+    if (c >= 2) sc += 4;
+  }
+
+  // Mobility: more legal moves offers flexibility
+  let mob = 0;
+  for (const p of s.pieces[side]) mob += legalTargets(s,p.at).size;
+  sc += mob * 0.2;
   return sc;
 }
 

@@ -92,7 +92,8 @@ let state, winner=null, dragging=null, kbNav=null, tapSel=null;
 let history = []; // stack of prior states for Undo
 let botEnabled = true; // Player 2 is bot
 let flipped = false; // board orientation
-let botDepth = 4; // search depth for bot
+let botDepth = 4; // max search depth for bot
+let botTime = 1000; // ms allotted per bot move
 
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
@@ -188,7 +189,9 @@ function scoreSide(s, side){
 }
 
 function evaluate(s){ return scoreSide(s,'p2') - scoreSide(s,'p1'); } // bot is p2
-function minimax(s, depth, alpha, beta, maximizing){
+const TIMEOUT = Symbol('timeout');
+function minimax(s, depth, alpha, beta, maximizing, deadline){
+  if (deadline && performance.now() > deadline) throw TIMEOUT;
   const win = isWin(s);
   if (win){
     // terminal: huge score
@@ -204,7 +207,7 @@ function minimax(s, depth, alpha, beta, maximizing){
     let best = -Infinity;
     for (const m of moves){
       const ns = applyMove(s,m);
-      const val = minimax(ns, depth-1, alpha, beta, false);
+      const val = minimax(ns, depth-1, alpha, beta, false, deadline);
       best = Math.max(best, val);
       alpha = Math.max(alpha, val);
       if (beta <= alpha) break;
@@ -214,7 +217,7 @@ function minimax(s, depth, alpha, beta, maximizing){
     let best = Infinity;
     for (const m of moves){
       const ns = applyMove(s,m);
-      const val = minimax(ns, depth-1, alpha, beta, true);
+      const val = minimax(ns, depth-1, alpha, beta, true, deadline);
       best = Math.min(best, val);
       beta = Math.min(beta, val);
       if (beta <= alpha) break;
@@ -225,19 +228,35 @@ function minimax(s, depth, alpha, beta, maximizing){
 
 function botMove(){
   if (!botEnabled || winner || state.turn!=='p2') return;
-  // choose best move with minimax using selected depth
   const moves = allMoves(state,'p2');
-  let bestScore = -Infinity, best = null;
+  if (moves.length===0) return;
+
+  // Default to first move in case time runs out immediately
+  let best = moves[0];
 
   // Small opening bias: prefer taking X if free and reachable
   for (const m of moves){
     if (m.to==='X'){ best = m; break; }
   }
-  if (!best){
-    for (const m of moves){
-      const ns = applyMove(state,m);
-      const sc = minimax(ns, botDepth, -Infinity, Infinity, false);
-      if (sc > bestScore){ bestScore = sc; best = m; }
+
+  if (best.to !== 'X'){ // if no immediate X move, search
+    const deadline = performance.now() + botTime;
+    let bestScore = -Infinity;
+    for (let depth = 1; depth <= botDepth; depth++){
+      let currentBest = best;
+      let currentBestScore = -Infinity;
+      try {
+        for (const m of moves){
+          const ns = applyMove(state,m);
+          const sc = minimax(ns, depth-1, -Infinity, Infinity, false, deadline);
+          if (sc > currentBestScore){ currentBestScore = sc; currentBest = m; }
+        }
+        best = currentBest;
+        bestScore = currentBestScore;
+      } catch (e){
+        if (e === TIMEOUT) break; else throw e;
+      }
+      if (performance.now() > deadline) break;
     }
   }
 
@@ -476,3 +495,6 @@ flipBtn.onclick = () => {
 };
 const depthSel = document.getElementById('difficulty');
 depthSel.onchange = (e) => { botDepth = parseInt(e.target.value,10); };
+const timeSel = document.getElementById('movetime');
+botTime = parseInt(timeSel.value,10);
+timeSel.onchange = (e) => { botTime = parseInt(e.target.value,10); };

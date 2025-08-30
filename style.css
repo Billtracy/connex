@@ -13,7 +13,10 @@
   .row{display:flex;gap:8px;flex-wrap:wrap}
   .title{font-weight:800;letter-spacing:.2px}
   #board{width:100%;max-width:720px;margin:0 auto;height:auto;aspect-ratio:3/4;background:radial-gradient(ellipse at center,#0b0f23 0%,#1b1e5a 55%,#2a2e8f 100%);
-         border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.45);border:16px solid #f2f2f2}
+         border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.45);border:16px solid #f2f2f2;
+         transform-origin:center;}
+  #board.flipped{transform:rotate(180deg);}
+  #board.flipped text{transform:rotate(180deg);transform-box:fill-box;transform-origin:center;}
   svg text{font-weight:700;pointer-events:none}
   .node{cursor:pointer}
   .node circle{fill:#f2f2f2;stroke:#d6d6d6;stroke-width:2}

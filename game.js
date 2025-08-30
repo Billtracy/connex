@@ -92,6 +92,7 @@ let state, winner=null, dragging=null, kbNav=null, tapSel=null;
 let history = []; // stack of prior states for Undo
 let botEnabled = true; // Player 2 is bot
 let flipped = false; // board orientation
+let botDepth = 4; // search depth for bot
 
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
@@ -224,7 +225,7 @@ function minimax(s, depth, alpha, beta, maximizing){
 
 function botMove(){
   if (!botEnabled || winner || state.turn!=='p2') return;
-  // choose best move with shallow search (depth 4 is plenty here)
+  // choose best move with minimax using selected depth
   const moves = allMoves(state,'p2');
   let bestScore = -Infinity, best = null;
 
@@ -235,7 +236,7 @@ function botMove(){
   if (!best){
     for (const m of moves){
       const ns = applyMove(state,m);
-      const sc = minimax(ns, 4, -Infinity, Infinity, false);
+      const sc = minimax(ns, botDepth, -Infinity, Infinity, false);
       if (sc > bestScore){ bestScore = sc; best = m; }
     }
   }
@@ -390,11 +391,13 @@ function renderPieces(){
 }
 
 function postMoveActions(lastMove){
+  playMoveSound();
   const res = isWin(state);
   if (res){
     winner = res.player;
     drawWinLine(...res.line);
     log(`<b>${winner==='p1'?'P1':'P2'} wins</b> via ${res.line.join('–')}`);
+    playWinSound();
   }
   updateUI();
 }
@@ -439,6 +442,24 @@ function log(msg){
   logEl.scrollTop = logEl.scrollHeight;
 }
 
+/** ====================== Sound FX ====================== */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playTone(freq, dur){
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  gain.gain.value = 0.2;
+  osc.start();
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+  osc.stop(audioCtx.currentTime + dur);
+}
+function playMoveSound(){ playTone(660,0.08); }
+function playWinSound(){ playTone(880,0.3); setTimeout(()=>playTone(660,0.3),150); }
+
 /** ====================== Boot ====================== */
 drawEdges(); drawNodes(); reset();
 document.getElementById('reset').onclick = reset;
@@ -453,3 +474,5 @@ flipBtn.onclick = () => {
   svg.classList.toggle('flipped', flipped);
   flipBtn.textContent = flipped ? 'Unflip Board' : 'Flip Board';
 };
+const depthSel = document.getElementById('difficulty');
+depthSel.onchange = (e) => { botDepth = parseInt(e.target.value,10); };

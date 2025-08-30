@@ -10,6 +10,7 @@
   .btn{cursor:pointer;user-select:none}
   .btn:hover{background:rgba(255,255,255,.12)}
   .btn:active{transform:translateY(1px)}
+  select.pill{color:inherit;background:rgba(255,255,255,.07);backdrop-filter:blur(6px);padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.15);font-weight:600}
   .row{display:flex;gap:8px;flex-wrap:wrap}
   .title{font-weight:800;letter-spacing:.2px}
   #board{width:100%;max-width:720px;margin:0 auto;height:auto;aspect-ratio:3/4;background:radial-gradient(ellipse at center,#0b0f23 0%,#1b1e5a 55%,#2a2e8f 100%);

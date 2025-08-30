@@ -474,5 +474,12 @@ flipBtn.onclick = () => {
   svg.classList.toggle('flipped', flipped);
   flipBtn.textContent = flipped ? 'Unflip Board' : 'Flip Board';
 };
+const menu = document.getElementById('menu');
+const startBtn = document.getElementById('start');
+startBtn.onclick = () => {
+  menu.style.display = 'none';
+  reset();
+};
+
 const depthSel = document.getElementById('difficulty');
 depthSel.onchange = (e) => { botDepth = parseInt(e.target.value,10); };

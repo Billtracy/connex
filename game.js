@@ -32,6 +32,13 @@ const winLine = document.getElementById('winline');
 const turnEl = document.getElementById('turn');
 const logEl = document.getElementById('log');
 
+svg.addEventListener('click',(ev)=>{
+  if (tapSel && !ev.target.closest('.node') && !ev.target.closest('.piece')){
+    highlight(tapSel.legal,false);
+    tapSel=null;
+  }
+});
+
 const adj = {};
 for (const [u,v] of EDGES){ (adj[u]??=new Set()).add(v); (adj[v]??=new Set()).add(u); }
 
@@ -56,11 +63,32 @@ function drawNodes(){
     t.setAttribute('x',pt.x); t.setAttribute('y',pt.y+4);
     t.setAttribute('text-anchor','middle'); t.setAttribute('fill','#555'); t.setAttribute('font-size','10');
     t.textContent=k; g.appendChild(c); g.appendChild(t); nodesG.appendChild(g);
+
+    g.addEventListener('click',()=>{
+      if (!tapSel) return;
+      const id=g.getAttribute('data-id');
+      if (tapSel.legal.has(id)){
+        pushHistory();
+        state.pieces[tapSel.who][tapSel.idx].at = id;
+        state.turn = (state.turn==='p1') ? 'p2' : 'p1';
+        log(`${tapSel.who==='p1'?'P1':'P2'}: ${tapSel.from} → ${id}`);
+        postMoveActions({side:tapSel.who,idx:tapSel.idx,from:tapSel.from,to:id});
+        highlight(tapSel.legal,false);
+        tapSel=null;
+        renderPieces();
+        if (!winner && botEnabled && state.turn==='p2') {
+          setTimeout(botMove,220);
+        }
+      } else {
+        highlight(tapSel.legal,false);
+        tapSel=null;
+      }
+    });
   }
 }
 
 /** ====================== Game State ====================== */
-let state, winner=null, dragging=null, kbNav=null;
+let state, winner=null, dragging=null, kbNav=null, tapSel=null;
 let history = []; // stack of prior states for Undo
 let botEnabled = true; // Player 2 is bot
 
@@ -81,6 +109,7 @@ function reset(){
   history = [];
   winner = null;
   dragging = null;
+  tapSel = null;
   winLine.style.display='none';
   updateUI();
   updateModeText();
@@ -248,15 +277,18 @@ function renderPieces(){
       g.addEventListener('pointerdown',(ev)=>{
         if (winner || state.turn!==who) return;
         const legal = legalTargets(state, p.at);
-        dragging={who,idx,from:p.at,x0:pt.x,y0:pt.y,legal};
+        if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
+        dragging={who,idx,from:p.at,x0:pt.x,y0:pt.y,legal,moved:false};
         highlight(legal,true);
         g.setPointerCapture(ev.pointerId);
       });
       g.addEventListener('pointermove',(ev)=>{
         if (!dragging||dragging.idx!==idx||dragging.who!==who) return;
+        dragging.moved=true;
         const q=svgPoint(ev);
         g.firstChild.setAttribute('x',q.x-PIECE_SIZE/2);
         g.firstChild.setAttribute('y',q.y-PIECE_SIZE/2);
+        
       });
       g.addEventListener('pointerup',(ev)=>{
         if (!dragging||dragging.idx!==idx||dragging.who!==who) return;
@@ -267,6 +299,24 @@ function renderPieces(){
           state.turn = (state.turn==='p1')?'p2':'p1';
           log(`${who==='p1'?'P1':'P2'}: ${dragging.from} → ${drop}`);
           postMoveActions({side:who,idx,from:dragging.from,to:drop});
+          if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
+          highlight(dragging.legal,false); dragging=null; renderPieces();
+          if (!winner && botEnabled && state.turn==='p2') {
+            setTimeout(botMove, 220); // tiny delay feels natural
+          }
+          return;
+        }
+        if (!dragging.moved){
+          if (tapSel && tapSel.who===who && tapSel.idx===idx){
+            highlight(tapSel.legal,false);
+            tapSel=null;
+          } else {
+            if (tapSel) highlight(tapSel.legal,false);
+            tapSel={who,idx,from:p.at,legal:dragging.legal};
+            highlight(tapSel.legal,true);
+          }
+          dragging=null; renderPieces();
+          return;
         }
         highlight(dragging.legal,false); dragging=null; renderPieces();
         // If bot's turn, let it move after render
@@ -278,6 +328,7 @@ function renderPieces(){
       g.addEventListener('focus',()=>{
         if (winner || state.turn!==who) return;
         const legal=legalTargets(state,p.at);
+        if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
         kbNav={who,idx,from:p.at,current:p.at,legal,el:g};
         highlight(legal,true);
       });
@@ -373,6 +424,7 @@ function undo(){
   const prev = history.pop();
   state = prev.state;
   winner = prev.winner;
+  if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
   winLine.style.display = winner ? 'block' : 'none';
   updateUI();
   renderPieces();

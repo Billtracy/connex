@@ -23,6 +23,8 @@
   .piece circle{stroke:#00000040;stroke-width:2}
   .p1 circle{fill:var(--p1)}
   .p2 circle{fill:var(--p2)}
+  .piece:focus{outline:none}
+  .piece:focus circle{stroke:#00e0ff;stroke-width:3}
   .winline{stroke:#8aff8a;stroke-width:10;stroke-linecap:round;opacity:.9;filter:drop-shadow(0 0 8px #77ff77)}
   .log{height:360px;overflow:auto;border-radius:10px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);padding:10px;font-size:13px}
   .log b{color:#fff}

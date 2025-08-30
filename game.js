@@ -59,7 +59,7 @@ function drawNodes(){
 }
 
 /** ====================== Game State ====================== */
-let state, winner=null, dragging=null;
+let state, winner=null, dragging=null, kbNav=null;
 let history = []; // stack of prior states for Undo
 let botEnabled = true; // Player 2 is bot
 
@@ -234,6 +234,7 @@ function renderPieces(){
     state.pieces[who].forEach((p,idx)=>{
       const g=document.createElementNS('http://www.w3.org/2000/svg','g');
       g.setAttribute('class',`piece ${cls}`); g.setAttribute('data-side',who); g.setAttribute('data-index',idx);
+      g.setAttribute('tabindex','0');
       const pt=NODES[p.at]; const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
       c.setAttribute('cx',pt.x); c.setAttribute('cy',pt.y); c.setAttribute('r',12);
       g.appendChild(c); piecesG.appendChild(g);
@@ -264,6 +265,64 @@ function renderPieces(){
         // If bot's turn, let it move after render
         if (!winner && botEnabled && state.turn==='p2') {
           setTimeout(botMove, 220); // tiny delay feels natural
+        }
+      });
+
+      g.addEventListener('focus',()=>{
+        if (winner || state.turn!==who) return;
+        const legal=legalTargets(state,p.at);
+        kbNav={who,idx,from:p.at,current:p.at,legal,el:g};
+        highlight(legal,true);
+      });
+      g.addEventListener('blur',()=>{
+        if (!kbNav) return;
+        highlight(kbNav.legal,false);
+        kbNav=null;
+        renderPieces();
+      });
+      g.addEventListener('keydown',(ev)=>{
+        if (!kbNav||kbNav.idx!==idx||kbNav.who!==who) return;
+        if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(ev.key)){
+          ev.preventDefault();
+          const {from}=kbNav; const {x:fx,y:fy}=NODES[from];
+          let best=null, bestd=Infinity;
+          for (const id of kbNav.legal){
+            const {x,y}=NODES[id];
+            switch(ev.key){
+              case 'ArrowUp':
+                if (y<fy && fy-y<bestd){best=id; bestd=fy-y;}
+                break;
+              case 'ArrowDown':
+                if (y>fy && y-fy<bestd){best=id; bestd=y-fy;}
+                break;
+              case 'ArrowLeft':
+                if (x<fx && fx-x<bestd){best=id; bestd=fx-x;}
+                break;
+              case 'ArrowRight':
+                if (x>fx && x-fx<bestd){best=id; bestd=x-fx;}
+                break;
+            }
+          }
+          if (best){
+            kbNav.current=best;
+            const pt=NODES[best];
+            g.firstChild.setAttribute('cx',pt.x); g.firstChild.setAttribute('cy',pt.y);
+          }
+        } else if (ev.key==='Enter' || ev.key===' '){
+          ev.preventDefault();
+          if (kbNav.current!==kbNav.from){
+            pushHistory();
+            state.pieces[who][idx].at = kbNav.current;
+            state.turn = (state.turn==='p1')?'p2':'p1';
+            log(`${who==='p1'?'P1':'P2'}: ${kbNav.from} → ${kbNav.current}`);
+            postMoveActions({side:who,idx,from:kbNav.from,to:kbNav.current});
+            highlight(kbNav.legal,false);
+            kbNav=null;
+            renderPieces();
+            if (!winner && botEnabled && state.turn==='p2') {
+              setTimeout(botMove,220);
+            }
+          }
         }
       });
     });

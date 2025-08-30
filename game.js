@@ -38,6 +38,7 @@ const analysisPrev = document.getElementById('analysis-prev');
 const analysisNext = document.getElementById('analysis-next');
 const analysisExit = document.getElementById('analysis-exit');
 
+
 svg.addEventListener('click',(ev)=>{
   if (analysisMode) return;
   if (tapSel && !ev.target.closest('.node') && !ev.target.closest('.piece')){
@@ -605,6 +606,16 @@ function analyzeGame(){
     let bestScore = mv.side==='p2'? -Infinity : Infinity;
     for (const m of moves){
       const ns = applyMove(s,m);
+  TT.clear();
+  log('<b>Post-game analysis:</b>');
+  let s = initialState();
+  moveHistory.forEach((mv, i) => {
+    const moves = allMoves(s, mv.side);
+    if (moves.length===0) return;
+    let best = moves[0];
+    let bestScore = mv.side==='p2' ? -Infinity : Infinity;
+    for (const m of moves){
+      const ns = applyMove(s, m);
       const sc = minimax(ns, botDepth-1, -Infinity, Infinity, ns.turn==='p2', null);
       if (mv.side==='p2'){
         if (sc > bestScore){ bestScore = sc; best = m; }
@@ -644,6 +655,12 @@ function showAnalysisStep(idx){
   analysisPrev.style.visibility = analysisIdx>0 ? 'visible' : 'hidden';
   analysisNext.style.visibility = analysisIdx<analysisData.states.length-1 ? 'visible' : 'hidden';
   updateUI();
+    const nsActual = applyMove(s, mv);
+    const actualScore = minimax(nsActual, botDepth-1, -Infinity, Infinity, nsActual.turn==='p2', null);
+    const diff = mv.side==='p2' ? bestScore - actualScore : actualScore - bestScore;
+    log(`Move ${i+1} ${mv.side==='p1'?'P1':'P2'} ${mv.from} → ${mv.to} | Best: ${best.from} → ${best.to} | Δ ${diff.toFixed(2)}`);
+    s = nsActual;
+  });
 }
 
 /** ====================== Sound FX ====================== */

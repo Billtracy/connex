@@ -32,8 +32,15 @@ const winLine = document.getElementById('winline');
 const turnEl = document.getElementById('turn');
 const logEl = document.getElementById('log');
 const analyzeBtn = document.getElementById('analyze');
+const analysisPanel = document.getElementById('analysis-panel');
+const analysisInfo = document.getElementById('analysis-info');
+const analysisPrev = document.getElementById('analysis-prev');
+const analysisNext = document.getElementById('analysis-next');
+const analysisExit = document.getElementById('analysis-exit');
+
 
 svg.addEventListener('click',(ev)=>{
+  if (analysisMode) return;
   if (tapSel && !ev.target.closest('.node') && !ev.target.closest('.piece')){
     highlight(tapSel.legal,false);
     tapSel=null;
@@ -66,6 +73,7 @@ function drawNodes(){
     t.textContent=k; g.appendChild(c); g.appendChild(t); nodesG.appendChild(g);
 
     g.addEventListener('click',()=>{
+      if (analysisMode) return;
       if (!tapSel) return;
       const id=g.getAttribute('data-id');
       if (tapSel.legal.has(id)){
@@ -97,6 +105,7 @@ let botEnabled = true; // Player 2 is bot
 let flipped = false; // board orientation
 let botDepth = 4; // max search depth for bot
 let botTime = 1000; // ms allotted per bot move
+let analysisData = null, analysisIdx = 0, analysisMode = false, analysisWinner = null;
 
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
@@ -145,6 +154,11 @@ function reset(){
   tapSel = null;
   winLine.style.display='none';
   analyzeBtn.style.display='none';
+  analysisPanel.style.display='none';
+  svg.classList.remove('analyzing');
+  analysisData = null; analysisIdx = 0; analysisMode = false; analysisWinner = null;
+  analysisInfo.textContent='Start position';
+  highlight(null,false);
   TT.clear();
   updateUI();
   updateModeText();
@@ -400,7 +414,7 @@ function renderPieces(){
 
       // Interaction only for current side and if game not over
       g.addEventListener('pointerdown',(ev)=>{
-        if (winner || state.turn!==who) return;
+        if (winner || state.turn!==who || analysisMode) return;
         const legal = legalTargets(state, p.at);
         if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
         dragging={who,idx,from:p.at,x0:pt.x,y0:pt.y,legal,moved:false};
@@ -452,7 +466,7 @@ function renderPieces(){
       });
 
       g.addEventListener('focus',()=>{
-        if (winner || state.turn!==who) return;
+        if (winner || state.turn!==who || analysisMode) return;
         const legal=legalTargets(state,p.at);
         if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
         kbNav={who,idx,from:p.at,current:p.at,legal,el:g};
@@ -574,6 +588,24 @@ function log(msg){
 /** ====================== Post-game Analysis ====================== */
 function analyzeGame(){
   if (moveHistory.length===0) return;
+  analysisMode = true;
+  analyzeBtn.style.display='none';
+  analysisPanel.style.display='flex';
+  svg.classList.add('analyzing');
+  if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
+  analysisInfo.textContent='Start position';
+  TT.clear();
+  analysisWinner = winner;
+  log('<b>Post-game analysis:</b> use controls below to review moves.');
+  const states=[initialState()];
+  const infos=[];
+  let s = states[0];
+  moveHistory.forEach((mv)=>{
+    const moves = allMoves(s, mv.side);
+    let best = moves[0];
+    let bestScore = mv.side==='p2'? -Infinity : Infinity;
+    for (const m of moves){
+      const ns = applyMove(s,m);
   TT.clear();
   log('<b>Post-game analysis:</b>');
   let s = initialState();
@@ -591,6 +623,38 @@ function analyzeGame(){
         if (sc < bestScore){ bestScore = sc; best = m; }
       }
     }
+    const nsActual = applyMove(s,mv);
+    const actualScore = minimax(nsActual, botDepth-1, -Infinity, Infinity, nsActual.turn==='p2', null);
+    const diff = mv.side==='p2'? bestScore - actualScore : actualScore - bestScore;
+    infos.push({move:mv,best,diff});
+    states.push(nsActual);
+    s = nsActual;
+  });
+  analysisData = {states,infos};
+  analysisIdx = 0;
+  showAnalysisStep(0);
+}
+
+function showAnalysisStep(idx){
+  if (!analysisData) return;
+  analysisIdx = Math.max(0, Math.min(idx, analysisData.states.length-1));
+  state = clone(analysisData.states[analysisIdx]);
+  winner = null;
+  renderPieces();
+  highlight(null,false);
+  winLine.style.display='none';
+  const res = isWin(state);
+  if (res){ winner = res.player; drawWinLine(...res.line); }
+  if (analysisIdx===0){
+    analysisInfo.textContent = 'Start position';
+  } else {
+    const info = analysisData.infos[analysisIdx-1];
+    analysisInfo.textContent = `Move ${analysisIdx} ${info.move.side==='p1'?'P1':'P2'} ${info.move.from} → ${info.move.to} | Best: ${info.best.from} → ${info.best.to} | Δ ${info.diff.toFixed(2)}`;
+    highlight(new Set([info.move.from, info.move.to]), true);
+  }
+  analysisPrev.style.visibility = analysisIdx>0 ? 'visible' : 'hidden';
+  analysisNext.style.visibility = analysisIdx<analysisData.states.length-1 ? 'visible' : 'hidden';
+  updateUI();
     const nsActual = applyMove(s, mv);
     const actualScore = minimax(nsActual, botDepth-1, -Infinity, Infinity, nsActual.turn==='p2', null);
     const diff = mv.side==='p2' ? bestScore - actualScore : actualScore - bestScore;
@@ -622,6 +686,25 @@ drawEdges(); drawNodes(); reset();
 document.getElementById('reset').onclick = reset;
 document.getElementById('undo').onclick = undo;
 analyzeBtn.onclick = analyzeGame;
+analysisPrev.onclick = () => showAnalysisStep(analysisIdx-1);
+analysisNext.onclick = () => showAnalysisStep(analysisIdx+1);
+analysisExit.onclick = () => {
+  analysisMode = false;
+  analysisPanel.style.display='none';
+  svg.classList.remove('analyzing');
+  highlight(null,false);
+  if (analysisData){
+    state = clone(analysisData.states[analysisData.states.length-1]);
+  }
+  winner = analysisWinner;
+  renderPieces();
+  if (winner){ const res = isWin(state); if (res) drawWinLine(...res.line); }
+  else winLine.style.display='none';
+  analysisData = null;
+  analysisWinner = null;
+  updateUI();
+  analyzeBtn.style.display='inline-block';
+};
 document.getElementById('mode').onclick = () => {
   botEnabled = !botEnabled;
   updateModeText();

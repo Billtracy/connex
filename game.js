@@ -91,6 +91,7 @@ function drawNodes(){
 let state, winner=null, dragging=null, kbNav=null, tapSel=null;
 let history = []; // stack of prior states for Undo
 let botEnabled = true; // Player 2 is bot
+let flipped = false; // board orientation
 
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
@@ -445,4 +446,10 @@ document.getElementById('undo').onclick = undo;
 document.getElementById('mode').onclick = () => {
   botEnabled = !botEnabled;
   updateModeText();
+};
+const flipBtn = document.getElementById('flip');
+flipBtn.onclick = () => {
+  flipped = !flipped;
+  svg.classList.toggle('flipped', flipped);
+  flipBtn.textContent = flipped ? 'Unflip Board' : 'Flip Board';
 };

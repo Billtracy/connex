@@ -31,6 +31,7 @@ const piecesG = document.getElementById('pieces');
 const winLine = document.getElementById('winline');
 const turnEl = document.getElementById('turn');
 const logEl = document.getElementById('log');
+const analyzeBtn = document.getElementById('analyze');
 
 svg.addEventListener('click',(ev)=>{
   if (tapSel && !ev.target.closest('.node') && !ev.target.closest('.piece')){
@@ -91,6 +92,7 @@ function drawNodes(){
 /** ====================== Game State ====================== */
 let state, winner=null, dragging=null, kbNav=null, tapSel=null;
 let history = []; // stack of prior states for Undo
+let moveHistory = []; // moves played for post-game analysis
 let botEnabled = true; // Player 2 is bot
 let flipped = false; // board orientation
 let botDepth = 4; // max search depth for bot
@@ -137,10 +139,12 @@ function initialState(){
 function reset(){
   state = initialState();
   history = [];
+  moveHistory = [];
   winner = null;
   dragging = null;
   tapSel = null;
   winLine.style.display='none';
+  analyzeBtn.style.display='none';
   TT.clear();
   updateUI();
   updateModeText();
@@ -513,12 +517,14 @@ function renderPieces(){
 
 function postMoveActions(lastMove){
   playMoveSound();
+  moveHistory.push(lastMove);
   const res = isWin(state);
   if (res){
     winner = res.player;
     drawWinLine(...res.line);
     log(`<b>${winner==='p1'?'P1':'P2'} wins</b> via ${res.line.join('–')}`);
     playWinSound();
+    analyzeBtn.style.display='inline-block';
   }
   updateUI();
 }
@@ -549,6 +555,8 @@ function undo(){
   const prev = history.pop();
   state = prev.state;
   winner = prev.winner;
+  if (moveHistory.length>0) moveHistory.pop();
+  analyzeBtn.style.display = winner ? 'inline-block' : 'none';
   if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
   winLine.style.display = winner ? 'block' : 'none';
   updateUI();
@@ -561,6 +569,34 @@ function log(msg){
   div.innerHTML = msg;
   logEl.appendChild(div);
   logEl.scrollTop = logEl.scrollHeight;
+}
+
+/** ====================== Post-game Analysis ====================== */
+function analyzeGame(){
+  if (moveHistory.length===0) return;
+  TT.clear();
+  log('<b>Post-game analysis:</b>');
+  let s = initialState();
+  moveHistory.forEach((mv, i) => {
+    const moves = allMoves(s, mv.side);
+    if (moves.length===0) return;
+    let best = moves[0];
+    let bestScore = mv.side==='p2' ? -Infinity : Infinity;
+    for (const m of moves){
+      const ns = applyMove(s, m);
+      const sc = minimax(ns, botDepth-1, -Infinity, Infinity, ns.turn==='p2', null);
+      if (mv.side==='p2'){
+        if (sc > bestScore){ bestScore = sc; best = m; }
+      } else {
+        if (sc < bestScore){ bestScore = sc; best = m; }
+      }
+    }
+    const nsActual = applyMove(s, mv);
+    const actualScore = minimax(nsActual, botDepth-1, -Infinity, Infinity, nsActual.turn==='p2', null);
+    const diff = mv.side==='p2' ? bestScore - actualScore : actualScore - bestScore;
+    log(`Move ${i+1} ${mv.side==='p1'?'P1':'P2'} ${mv.from} → ${mv.to} | Best: ${best.from} → ${best.to} | Δ ${diff.toFixed(2)}`);
+    s = nsActual;
+  });
 }
 
 /** ====================== Sound FX ====================== */
@@ -585,6 +621,7 @@ function playWinSound(){ playTone(880,0.3); setTimeout(()=>playTone(660,0.3),150
 drawEdges(); drawNodes(); reset();
 document.getElementById('reset').onclick = reset;
 document.getElementById('undo').onclick = undo;
+analyzeBtn.onclick = analyzeGame;
 document.getElementById('mode').onclick = () => {
   botEnabled = !botEnabled;
   updateModeText();

@@ -86,7 +86,7 @@ function drawNodes(){
         highlight(tapSel.legal,false);
         tapSel=null;
         renderPieces();
-        if (!winner && botEnabled && state.turn==='p2') {
+        if (!winner && botEnabled && state.turn===botSide) {
           setTimeout(botMove,220);
         }
       } else {
@@ -101,7 +101,8 @@ function drawNodes(){
 let state, winner=null, dragging=null, kbNav=null, tapSel=null;
 let history = []; // stack of prior states for Undo
 let moveHistory = []; // moves played for post-game analysis
-let botEnabled = true; // Player 2 is bot
+let botEnabled = true; // play against bot?
+let botSide = 'p2'; // which side the bot controls
 let flipped = false; // board orientation
 let botDepth = 4; // max search depth for bot
 let botTime = 1000; // ms allotted per bot move
@@ -147,6 +148,7 @@ function initialState(){
 
 function reset(){
   state = initialState();
+  botSide = Math.random() < 0.5 ? 'p1' : 'p2';
   history = [];
   moveHistory = [];
   winner = null;
@@ -164,7 +166,8 @@ function reset(){
   updateModeText();
   renderPieces();
   clearLog();
-  log('Game started. P1 moves first.');
+  log(`Game started. ${botSide==='p1'?'Bot':'Player'} as P1 moves first.`);
+  if (botEnabled && botSide==='p1') setTimeout(botMove,220);
 }
 
 /** Helpers */
@@ -277,7 +280,10 @@ function scoreSide(s, side){
   return sc;
 }
 
-function evaluate(s){ return scoreSide(s,'p2') - scoreSide(s,'p1'); } // bot is p2
+function evaluate(s){
+  const opp = botSide==='p1' ? 'p2' : 'p1';
+  return scoreSide(s,botSide) - scoreSide(s,opp);
+}
 const TIMEOUT = Symbol('timeout');
 const TT = new Map(); // transposition table
 let nodesSearched = 0; // count nodes visited during search
@@ -294,7 +300,7 @@ function minimax(s, depth, alpha, beta, maximizing, deadline){
   }
   const win = isWin(s);
   if (win){
-    const sc = (win.player==='p2') ? 1000 : -1000;
+    const sc = (win.player===botSide) ? 1000 : -1000;
     TT.set(hash,{depth,score:sc,flag:'exact'});
     return sc;
   }
@@ -304,7 +310,7 @@ function minimax(s, depth, alpha, beta, maximizing, deadline){
     return sc;
   }
 
-  const side = maximizing ? 'p2' : 'p1';
+  const side = maximizing ? botSide : (botSide==='p1' ? 'p2' : 'p1');
   const moves = allMoves(s, side);
   if (moves.length===0){
     const sc = evaluate(s);
@@ -342,8 +348,8 @@ function minimax(s, depth, alpha, beta, maximizing, deadline){
 }
 
 function botMove(){
-  if (!botEnabled || winner || state.turn!=='p2') return;
-  const moves = allMoves(state,'p2');
+  if (!botEnabled || winner || state.turn!==botSide) return;
+  const moves = allMoves(state,botSide);
   if (moves.length===0) return;
   nodesSearched = 0;
   moves.sort((a,b)=>b.rank - a.rank);
@@ -380,7 +386,7 @@ function botMove(){
   if (best){
     pushHistory();
     state = applyMove(state, best);
-    log(`P2: ${best.from} → ${best.to}`);
+    log(`${botSide==='p1'?'P1':'P2'}: ${best.from} → ${best.to}`);
     log(`Nodes searched: ${nodesSearched}`);
     postMoveActions(best);
     renderPieces();
@@ -394,7 +400,11 @@ function updateUI(){
 
 function updateModeText(){
   const modeEl = document.getElementById('mode');
-  modeEl.textContent = botEnabled ? 'Mode: Human vs Bot (P2)' : 'Mode: Human vs Human';
+  if (botEnabled){
+    modeEl.textContent = `Mode: Human vs Bot (Bot: ${botSide==='p1'?'P1':'P2'})`;
+  } else {
+    modeEl.textContent = 'Mode: Human vs Human';
+  }
 }
 
 function renderPieces(){
@@ -441,7 +451,7 @@ function renderPieces(){
           postMoveActions({side:who,idx,from:dragging.from,to:drop});
           if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
           highlight(dragging.legal,false); dragging=null; renderPieces();
-          if (!winner && botEnabled && state.turn==='p2') {
+          if (!winner && botEnabled && state.turn===botSide) {
             setTimeout(botMove, 220); // tiny delay feels natural
           }
           return;
@@ -460,7 +470,7 @@ function renderPieces(){
         }
         highlight(dragging.legal,false); dragging=null; renderPieces();
         // If bot's turn, let it move after render
-        if (!winner && botEnabled && state.turn==='p2') {
+        if (!winner && botEnabled && state.turn===botSide) {
           setTimeout(botMove, 220); // tiny delay feels natural
         }
       });
@@ -519,7 +529,7 @@ function renderPieces(){
             highlight(kbNav.legal,false);
             kbNav=null;
             renderPieces();
-            if (!winner && botEnabled && state.turn==='p2') {
+            if (!winner && botEnabled && state.turn===botSide) {
               setTimeout(botMove,220);
             }
           }
@@ -596,36 +606,27 @@ function analyzeGame(){
   analysisInfo.textContent='Start position';
   TT.clear();
   analysisWinner = winner;
-  log('<b>Post-game analysis:</b> use controls below to review moves.');
+  log('<b>Post-game analysis:</b>');
   const states=[initialState()];
   const infos=[];
   let s = states[0];
-  moveHistory.forEach((mv)=>{
-    const moves = allMoves(s, mv.side);
-    let best = moves[0];
-    let bestScore = mv.side==='p2'? -Infinity : Infinity;
-    for (const m of moves){
-      const ns = applyMove(s,m);
-  TT.clear();
-  log('<b>Post-game analysis:</b>');
-  let s = initialState();
   moveHistory.forEach((mv, i) => {
     const moves = allMoves(s, mv.side);
     if (moves.length===0) return;
     let best = moves[0];
-    let bestScore = mv.side==='p2' ? -Infinity : Infinity;
+    let bestScore = mv.side===botSide ? -Infinity : Infinity;
     for (const m of moves){
       const ns = applyMove(s, m);
-      const sc = minimax(ns, botDepth-1, -Infinity, Infinity, ns.turn==='p2', null);
-      if (mv.side==='p2'){
+      const sc = minimax(ns, botDepth-1, -Infinity, Infinity, ns.turn===botSide, null);
+      if (mv.side===botSide){
         if (sc > bestScore){ bestScore = sc; best = m; }
       } else {
         if (sc < bestScore){ bestScore = sc; best = m; }
       }
     }
     const nsActual = applyMove(s,mv);
-    const actualScore = minimax(nsActual, botDepth-1, -Infinity, Infinity, nsActual.turn==='p2', null);
-    const diff = mv.side==='p2'? bestScore - actualScore : actualScore - bestScore;
+    const actualScore = minimax(nsActual, botDepth-1, -Infinity, Infinity, nsActual.turn===botSide, null);
+    const diff = mv.side===botSide ? bestScore - actualScore : actualScore - bestScore;
     infos.push({move:mv,best,diff});
     states.push(nsActual);
     s = nsActual;
@@ -655,12 +656,6 @@ function showAnalysisStep(idx){
   analysisPrev.style.visibility = analysisIdx>0 ? 'visible' : 'hidden';
   analysisNext.style.visibility = analysisIdx<analysisData.states.length-1 ? 'visible' : 'hidden';
   updateUI();
-    const nsActual = applyMove(s, mv);
-    const actualScore = minimax(nsActual, botDepth-1, -Infinity, Infinity, nsActual.turn==='p2', null);
-    const diff = mv.side==='p2' ? bestScore - actualScore : actualScore - bestScore;
-    log(`Move ${i+1} ${mv.side==='p1'?'P1':'P2'} ${mv.from} → ${mv.to} | Best: ${best.from} → ${best.to} | Δ ${diff.toFixed(2)}`);
-    s = nsActual;
-  });
 }
 
 /** ====================== Sound FX ====================== */

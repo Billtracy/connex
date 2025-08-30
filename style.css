@@ -31,3 +31,8 @@
   .small{opacity:.9;font-size:12px}
   .sep{height:1px;background:rgba(255,255,255,.08);margin:6px 0}
   .hint{font-size:12px;opacity:.85}
+
+@media (max-width: 768px){
+  .page{grid-template-columns:1fr;padding:0 8px}
+  .log{height:200px}
+}

@@ -31,6 +31,7 @@ const piecesG = document.getElementById('pieces');
 const winLine = document.getElementById('winline');
 const turnEl = document.getElementById('turn');
 const logEl = document.getElementById('log');
+const undoBtn = document.getElementById('undo');
 const analyzeBtn = document.getElementById('analyze');
 const analysisPanel = document.getElementById('analysis-panel');
 const analysisInfo = document.getElementById('analysis-info');
@@ -157,6 +158,7 @@ function reset(){
   analysisPanel.style.display='none';
   svg.classList.remove('analyzing');
   analysisData = null; analysisIdx = 0; analysisMode = false; analysisWinner = null;
+  undoBtn.disabled = false;
   analysisInfo.textContent='Start position';
   highlight(null,false);
   TT.clear();
@@ -565,7 +567,7 @@ function pushHistory(){
   history.push({ state: clone(state), winner });
 }
 function undo(){
-  if (history.length===0) return;
+  if (analysisMode || history.length===0) return;
   const prev = history.pop();
   state = prev.state;
   winner = prev.winner;
@@ -590,6 +592,7 @@ function analyzeGame(){
   if (moveHistory.length===0) return;
   analysisMode = true;
   analyzeBtn.style.display='none';
+  undoBtn.disabled = true;
   analysisPanel.style.display='flex';
   svg.classList.add('analyzing');
   if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
@@ -606,16 +609,6 @@ function analyzeGame(){
     let bestScore = mv.side==='p2'? -Infinity : Infinity;
     for (const m of moves){
       const ns = applyMove(s,m);
-  TT.clear();
-  log('<b>Post-game analysis:</b>');
-  let s = initialState();
-  moveHistory.forEach((mv, i) => {
-    const moves = allMoves(s, mv.side);
-    if (moves.length===0) return;
-    let best = moves[0];
-    let bestScore = mv.side==='p2' ? -Infinity : Infinity;
-    for (const m of moves){
-      const ns = applyMove(s, m);
       const sc = minimax(ns, botDepth-1, -Infinity, Infinity, ns.turn==='p2', null);
       if (mv.side==='p2'){
         if (sc > bestScore){ bestScore = sc; best = m; }
@@ -652,19 +645,13 @@ function showAnalysisStep(idx){
     analysisInfo.textContent = `Move ${analysisIdx} ${info.move.side==='p1'?'P1':'P2'} ${info.move.from} → ${info.move.to} | Best: ${info.best.from} → ${info.best.to} | Δ ${info.diff.toFixed(2)}`;
     highlight(new Set([info.move.from, info.move.to]), true);
   }
-  analysisPrev.style.visibility = analysisIdx>0 ? 'visible' : 'hidden';
-  analysisNext.style.visibility = analysisIdx<analysisData.states.length-1 ? 'visible' : 'hidden';
-  updateUI();
-    const nsActual = applyMove(s, mv);
-    const actualScore = minimax(nsActual, botDepth-1, -Infinity, Infinity, nsActual.turn==='p2', null);
-    const diff = mv.side==='p2' ? bestScore - actualScore : actualScore - bestScore;
-    log(`Move ${i+1} ${mv.side==='p1'?'P1':'P2'} ${mv.from} → ${mv.to} | Best: ${best.from} → ${best.to} | Δ ${diff.toFixed(2)}`);
-    s = nsActual;
-  });
-}
+    analysisPrev.style.visibility = analysisIdx>0 ? 'visible' : 'hidden';
+    analysisNext.style.visibility = analysisIdx<analysisData.states.length-1 ? 'visible' : 'hidden';
+    updateUI();
+  }
 
-/** ====================== Sound FX ====================== */
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  /** ====================== Sound FX ====================== */
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playTone(freq, dur){
   if (audioCtx.state === 'suspended') audioCtx.resume();
   const osc = audioCtx.createOscillator();
@@ -684,7 +671,7 @@ function playWinSound(){ playTone(880,0.3); setTimeout(()=>playTone(660,0.3),150
 /** ====================== Boot ====================== */
 drawEdges(); drawNodes(); reset();
 document.getElementById('reset').onclick = reset;
-document.getElementById('undo').onclick = undo;
+undoBtn.onclick = undo;
 analyzeBtn.onclick = analyzeGame;
 analysisPrev.onclick = () => showAnalysisStep(analysisIdx-1);
 analysisNext.onclick = () => showAnalysisStep(analysisIdx+1);
@@ -692,6 +679,7 @@ analysisExit.onclick = () => {
   analysisMode = false;
   analysisPanel.style.display='none';
   svg.classList.remove('analyzing');
+  undoBtn.disabled = false;
   highlight(null,false);
   if (analysisData){
     state = clone(analysisData.states[analysisData.states.length-1]);

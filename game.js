@@ -37,6 +37,17 @@ const analysisInfo = document.getElementById('analysis-info');
 const analysisPrev = document.getElementById('analysis-prev');
 const analysisNext = document.getElementById('analysis-next');
 const analysisExit = document.getElementById('analysis-exit');
+const resetBtn = document.getElementById('reset');
+const undoBtn = document.getElementById('undo');
+const hostBtn = document.getElementById('host-session');
+const joinBtn = document.getElementById('join-session');
+const leaveBtn = document.getElementById('leave-session');
+const roomCodeEl = document.getElementById('room-code');
+const joinCodeInput = document.getElementById('join-code');
+const connectionStatusEl = document.getElementById('connection-status');
+const configStatusEl = document.getElementById('config-status');
+const applyConfigBtn = document.getElementById('apply-config');
+const firebaseInputs = document.querySelectorAll('[data-firebase-key]');
 
 
 svg.addEventListener('click',(ev)=>{
@@ -78,11 +89,13 @@ function drawNodes(){
       const id=g.getAttribute('data-id');
       if (tapSel.legal.has(id)){
         pushHistory();
-        state.pieces[tapSel.who][tapSel.idx].at = id;
+        const move = { side: tapSel.who, idx: tapSel.idx, from: tapSel.from, to: id };
+        state.pieces[move.side][move.idx].at = move.to;
         state.turn = (state.turn==='p1') ? 'p2' : 'p1';
-        updateHashAfterMove(state,{side:tapSel.who,from:tapSel.from,to:id});
-        log(`${tapSel.who==='p1'?'P1':'P2'}: ${tapSel.from} → ${id}`);
-        postMoveActions({side:tapSel.who,idx:tapSel.idx,from:tapSel.from,to:id});
+        updateHashAfterMove(state, move);
+        log(`${move.side==='p1'?'P1':'P2'}: ${move.from} → ${move.to}`);
+        postMoveActions(move);
+        broadcastMove(move);
         highlight(tapSel.legal,false);
         tapSel=null;
         renderPieces();
@@ -107,6 +120,25 @@ let flipped = false; // board orientation
 let botDepth = 4; // max search depth for bot
 let botTime = 1000; // ms allotted per bot move
 let analysisData = null, analysisIdx = 0, analysisMode = false, analysisWinner = null;
+let firebaseConfig = window.FIREBASE_DEFAULT_CONFIG || null;
+let firebaseAppInstance = null;
+let firestoreDb = null;
+let peerConnection = null;
+let dataChannel = null;
+let roomDocRef = null;
+let roomUnsub = null;
+let candidateUnsubs = [];
+let isHost = false;
+let onlineSession = false;
+let peerConnected = false;
+let localSide = null;
+let remoteSide = null;
+let botEnabledBeforeOnline = null;
+let pendingRoomCode = null;
+let awaitingInitialState = false;
+const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const DATA_CHANNEL_LABEL = 'connex-moves';
+const MULTIPLAYER_PROTOCOL_VERSION = 1;
 
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
@@ -164,6 +196,7 @@ function reset(){
   TT.clear();
   updateUI();
   updateModeText();
+  if (!onlineSession) setUndoAvailability(true);
   renderPieces();
   clearLog();
   log(`Game started. ${botSide==='p1'?'Bot':'Player'} as P1 moves first.`);
@@ -407,6 +440,11 @@ function updateModeText(){
   }
 }
 
+function setUndoAvailability(enabled){
+  if (!undoBtn) return;
+  undoBtn.classList.toggle('disabled', !enabled);
+}
+
 function renderPieces(){
   piecesG.innerHTML='';
   for (const [who,cls] of [['p1','p1'],['p2','p2']]){
@@ -424,6 +462,7 @@ function renderPieces(){
 
       // Interaction only for current side and if game not over
       g.addEventListener('pointerdown',(ev)=>{
+        if (onlineSession && localSide && who!==localSide) return;
         if (winner || state.turn!==who || analysisMode) return;
         const legal = legalTargets(state, p.at);
         if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
@@ -444,11 +483,13 @@ function renderPieces(){
         const drop=nearest(svgPoint(ev),dragging.legal);
         if (drop){
           pushHistory();
-          state.pieces[who][idx].at = drop;
+          const move = { side: who, idx, from: dragging.from, to: drop };
+          state.pieces[move.side][move.idx].at = move.to;
           state.turn = (state.turn==='p1')?'p2':'p1';
-          updateHashAfterMove(state,{side:who,from:dragging.from,to:drop});
-          log(`${who==='p1'?'P1':'P2'}: ${dragging.from} → ${drop}`);
-          postMoveActions({side:who,idx,from:dragging.from,to:drop});
+          updateHashAfterMove(state, move);
+          log(`${move.side==='p1'?'P1':'P2'}: ${move.from} → ${move.to}`);
+          postMoveActions(move);
+          broadcastMove(move);
           if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
           highlight(dragging.legal,false); dragging=null; renderPieces();
           if (!winner && botEnabled && state.turn===botSide) {
@@ -476,6 +517,7 @@ function renderPieces(){
       });
 
       g.addEventListener('focus',()=>{
+        if (onlineSession && localSide && who!==localSide) return;
         if (winner || state.turn!==who || analysisMode) return;
         const legal=legalTargets(state,p.at);
         if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
@@ -489,6 +531,7 @@ function renderPieces(){
         renderPieces();
       });
       g.addEventListener('keydown',(ev)=>{
+        if (onlineSession && localSide && who!==localSide) return;
         if (!kbNav||kbNav.idx!==idx||kbNav.who!==who) return;
         if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(ev.key)){
           ev.preventDefault();
@@ -521,11 +564,13 @@ function renderPieces(){
           ev.preventDefault();
           if (kbNav.current!==kbNav.from){
             pushHistory();
-            state.pieces[who][idx].at = kbNav.current;
+            const move = { side: who, idx, from: kbNav.from, to: kbNav.current };
+            state.pieces[move.side][move.idx].at = move.to;
             state.turn = (state.turn==='p1')?'p2':'p1';
-            updateHashAfterMove(state,{side:who,from:kbNav.from,to:kbNav.current});
-            log(`${who==='p1'?'P1':'P2'}: ${kbNav.from} → ${kbNav.current}`);
-            postMoveActions({side:who,idx,from:kbNav.from,to:kbNav.current});
+            updateHashAfterMove(state, move);
+            log(`${move.side==='p1'?'P1':'P2'}: ${move.from} → ${move.to}`);
+            postMoveActions(move);
+            broadcastMove(move);
             highlight(kbNav.legal,false);
             kbNav=null;
             renderPieces();
@@ -553,6 +598,50 @@ function postMoveActions(lastMove){
   updateUI();
 }
 
+function broadcastMove(move){
+  if (!peerConnected || !dataChannel || dataChannel.readyState !== 'open') return;
+  if (localSide && move.side !== localSide) return;
+  sendPeerMessage('move', { ...move, hash: state.hash });
+}
+
+function handleRemoteMove(payload){
+  if (!payload || !onlineSession || !remoteSide) return;
+  if (awaitingInitialState) return;
+  const side = payload.side;
+  const idx = Number(payload.idx);
+  if (side !== remoteSide || Number.isNaN(idx)) return;
+  if (analysisMode){
+    analysisExit.onclick();
+  }
+  if (state.turn !== remoteSide){
+    log('<span class="warn">Ignoring out-of-turn move from peer.</span>');
+    return;
+  }
+  const pieceList = state.pieces[side];
+  if (!pieceList || !pieceList[idx] || pieceList[idx].at !== payload.from){
+    log('<span class="warn">Invalid move from peer (piece mismatch).</span>');
+    return;
+  }
+  const legal = legalTargets(state, payload.from);
+  if (!legal.has(payload.to)){
+    log('<span class="warn">Invalid move from peer (illegal target).</span>');
+    return;
+  }
+  pushHistory();
+  pieceList[idx].at = payload.to;
+  state.turn = (state.turn === 'p1') ? 'p2' : 'p1';
+  updateHashAfterMove(state, { side, idx, from: payload.from, to: payload.to });
+  if (tapSel){ highlight(tapSel.legal,false); tapSel=null; }
+  highlight(null,false);
+  dragging = null;
+  log(`<i>Peer</i>: ${payload.from} → ${payload.to}`);
+  postMoveActions({ side, idx, from: payload.from, to: payload.to });
+  renderPieces();
+  if (payload.hash !== undefined && state.hash !== payload.hash){
+    log('<span class="warn">State hash mismatch. Consider resetting.</span>');
+  }
+}
+
 function drawWinLine(a,x,b){
   winLine.setAttribute('x1',NODES[a].x); winLine.setAttribute('y1',NODES[a].y);
   winLine.setAttribute('x2',NODES[b].x); winLine.setAttribute('y2',NODES[b].y);
@@ -575,6 +664,10 @@ function pushHistory(){
   history.push({ state: clone(state), winner });
 }
 function undo(){
+  if (onlineSession){
+    log('<b>Multiplayer:</b> Undo disabled during online play.');
+    return;
+  }
   if (history.length===0) return;
   const prev = history.pop();
   state = prev.state;
@@ -658,6 +751,374 @@ function showAnalysisStep(idx){
   updateUI();
 }
 
+/** ====================== Multiplayer ====================== */
+const STATUS_LABELS = {
+  offline: 'Offline',
+  waiting: 'Waiting…',
+  connecting: 'Connecting…',
+  connected: 'Connected',
+  error: 'Error'
+};
+
+function updateConnectionStatus(state, message){
+  if (!connectionStatusEl) return;
+  connectionStatusEl.dataset.state = state;
+  connectionStatusEl.textContent = message || STATUS_LABELS[state] || state;
+}
+
+function readFirebaseConfigFromInputs(){
+  const base = { ...(window.FIREBASE_DEFAULT_CONFIG || {}) };
+  let hasValue = false;
+  firebaseInputs.forEach((input)=>{
+    const key = input.dataset.firebaseKey;
+    if (!key) return;
+    const value = input.value.trim();
+    if (value){ base[key] = value; hasValue = true; }
+  });
+  if (!hasValue && (!base || !base.apiKey)) return null;
+  return base;
+}
+
+function applyFirebaseConfigFromForm(){
+  const cfg = readFirebaseConfigFromInputs();
+  if (!cfg || !cfg.apiKey){
+    if (configStatusEl){
+      configStatusEl.textContent = 'Firebase: Missing apiKey';
+      configStatusEl.dataset.state = 'error';
+    }
+    return null;
+  }
+  firebaseConfig = cfg;
+  firebaseAppInstance = null;
+  firestoreDb = null;
+  if (configStatusEl){
+    configStatusEl.textContent = 'Firebase: Config saved';
+    configStatusEl.dataset.state = 'ready';
+  }
+  return cfg;
+}
+
+async function ensureFirebase(){
+  if (firestoreDb) return firestoreDb;
+  const cfg = firebaseConfig || readFirebaseConfigFromInputs();
+  if (!cfg || !cfg.apiKey) throw new Error('Firebase configuration is incomplete.');
+  if (typeof firebase === 'undefined') throw new Error('Firebase SDK not loaded.');
+  if (!firebase.apps.length){
+    firebaseAppInstance = firebase.initializeApp(cfg);
+  } else {
+    firebaseAppInstance = firebase.app();
+  }
+  firestoreDb = firebase.firestore();
+  if (configStatusEl){
+    configStatusEl.textContent = 'Firebase: Connected';
+    configStatusEl.dataset.state = 'connected';
+  }
+  return firestoreDb;
+}
+
+function generateRoomCode(){
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i=0;i<6;i++) code += alphabet[Math.floor(Math.random()*alphabet.length)];
+  return code;
+}
+
+function updateOnlineButtons(){
+  if (hostBtn) hostBtn.classList.toggle('disabled', onlineSession);
+  if (joinBtn) joinBtn.classList.toggle('disabled', onlineSession);
+  if (leaveBtn) leaveBtn.classList.toggle('disabled', !onlineSession);
+  if (resetBtn) resetBtn.classList.toggle('disabled', onlineSession);
+  if (joinCodeInput){
+    if (onlineSession) joinCodeInput.setAttribute('disabled','');
+    else joinCodeInput.removeAttribute('disabled');
+  }
+}
+
+function restoreSoloSettings(){
+  if (botEnabledBeforeOnline !== null){
+    botEnabled = botEnabledBeforeOnline;
+    botEnabledBeforeOnline = null;
+    updateModeText();
+  }
+  setUndoAvailability(true);
+}
+
+function startOnlineSession(role){
+  onlineSession = true;
+  isHost = role === 'host';
+  peerConnected = false;
+  awaitingInitialState = !isHost;
+  localSide = isHost ? 'p1' : 'p2';
+  remoteSide = localSide === 'p1' ? 'p2' : 'p1';
+  if (botEnabledBeforeOnline === null) botEnabledBeforeOnline = botEnabled;
+  botEnabled = false;
+  updateModeText();
+  if (analysisMode) analysisExit.onclick();
+  reset();
+  clearLog();
+  log(`<b>Multiplayer:</b> Preparing online match. You are ${localSide==='p1'?'Player 1 (blue)':'Player 2 (gold)'}.`);
+  setUndoAvailability(false);
+  updateOnlineButtons();
+}
+
+function attachPeerConnectionStateListener(){
+  if (!peerConnection) return;
+  peerConnection.onconnectionstatechange = () => {
+    if (!peerConnection) return;
+    if (peerConnection.connectionState === 'failed'){
+      updateConnectionStatus('error','Connection failed');
+    } else if (peerConnection.connectionState === 'disconnected'){
+      updateConnectionStatus('error','Disconnected');
+    }
+  };
+}
+
+function attachDataChannel(channel){
+  if (dataChannel && dataChannel !== channel){
+    try { dataChannel.close(); } catch (e) { /* ignore */ }
+  }
+  dataChannel = channel;
+  dataChannel.onopen = () => {
+    peerConnected = true;
+    updateConnectionStatus('connected','Connected');
+    const roleText = localSide==='p1'?'Player 1 (blue)':'Player 2 (gold)';
+    log(`<b>Multiplayer:</b> Connected to peer as ${roleText}.`);
+    if (isHost){
+      awaitingInitialState = false;
+      sendInitialState();
+    } else if (awaitingInitialState){
+      log('Waiting for host to sync the initial state…');
+    }
+  };
+  dataChannel.onmessage = (event) => {
+    try {
+      const message = JSON.parse(event.data);
+      handlePeerMessage(message);
+    } catch (err){
+      console.warn('Failed to parse peer message', err);
+    }
+  };
+  dataChannel.onclose = () => {
+    if (onlineSession){
+      leaveMultiplayer('Peer disconnected.', { deleteRoom: isHost });
+    }
+  };
+  dataChannel.onerror = (err) => {
+    console.warn('Data channel error', err);
+  };
+}
+
+function sendPeerMessage(type, payload){
+  if (!dataChannel || dataChannel.readyState !== 'open') return;
+  try {
+    dataChannel.send(JSON.stringify({ type, payload, version: MULTIPLAYER_PROTOCOL_VERSION }));
+  } catch (err){
+    console.warn('Failed to send peer message', err);
+  }
+}
+
+function handlePeerMessage(message){
+  if (!message) return;
+  if (message.version && message.version !== MULTIPLAYER_PROTOCOL_VERSION){
+    log('<span class="warn">Peer is using an incompatible version.</span>');
+    return;
+  }
+  switch(message.type){
+    case 'move':
+      handleRemoteMove(message.payload);
+      break;
+    case 'init':
+      handlePeerInit(message.payload);
+      break;
+    case 'leave':
+      leaveMultiplayer('Peer ended the match.', { deleteRoom: isHost });
+      break;
+    default:
+      break;
+  }
+}
+
+function handlePeerInit(payload){
+  if (!payload || isHost) return;
+  const incomingState = payload.state;
+  if (incomingState){
+    state = incomingState;
+    state.hash = payload.hash ?? computeHash(state);
+    state.turn = payload.turn ?? state.turn;
+    winner = null;
+    history = [];
+    moveHistory = [];
+    highlight(null,false);
+    winLine.style.display='none';
+    renderPieces();
+    updateUI();
+    log(`<b>Multiplayer:</b> Match synced. ${payload.hostSide==='p1'?'Host (P1)':'Host (P2)'} to move.`);
+  }
+  awaitingInitialState = false;
+}
+
+function sendInitialState(){
+  if (!isHost) return;
+  const snapshot = clone(state);
+  sendPeerMessage('init', {
+    state: snapshot,
+    hash: state.hash,
+    turn: state.turn,
+    hostSide: localSide,
+    version: MULTIPLAYER_PROTOCOL_VERSION
+  });
+}
+
+async function clearRoom(roomRef){
+  if (!roomRef || !firestoreDb) return;
+  const offerSnap = await roomRef.collection('offerCandidates').get();
+  const answerSnap = await roomRef.collection('answerCandidates').get();
+  const batch = firestoreDb.batch();
+  offerSnap.forEach(doc => batch.delete(doc.ref));
+  answerSnap.forEach(doc => batch.delete(doc.ref));
+  batch.delete(roomRef);
+  await batch.commit();
+}
+
+async function leaveMultiplayer(reason, options = {}){
+  const { deleteRoom = false, skipLog = false } = options;
+  onlineSession = false;
+  isHost = false;
+  if (dataChannel){
+    try { dataChannel.close(); } catch (e) { /* ignore */ }
+  }
+  dataChannel = null;
+  if (peerConnection){
+    try { peerConnection.close(); } catch (e) { /* ignore */ }
+  }
+  peerConnection = null;
+  if (roomUnsub){ roomUnsub(); roomUnsub = null; }
+  candidateUnsubs.forEach((fn)=>{ if (fn) fn(); });
+  candidateUnsubs = [];
+  if (roomDocRef && deleteRoom){
+    try { await clearRoom(roomDocRef); } catch (err) { console.warn('Failed to clear room', err); }
+  }
+  roomDocRef = null;
+  pendingRoomCode = null;
+  peerConnected = false;
+  awaitingInitialState = false;
+  localSide = null;
+  remoteSide = null;
+  updateConnectionStatus('offline', 'Offline');
+  if (roomCodeEl) roomCodeEl.textContent = 'Room: —';
+  if (!skipLog && reason) log(`<b>Multiplayer:</b> ${reason}`);
+  restoreSoloSettings();
+  updateOnlineButtons();
+  if (joinCodeInput){
+    joinCodeInput.removeAttribute('disabled');
+    if (!options.keepJoinCode) joinCodeInput.value='';
+  }
+}
+
+async function hostOnlineMatch(){
+  if (onlineSession) return;
+  try {
+    const db = await ensureFirebase();
+    startOnlineSession('host');
+    const code = generateRoomCode();
+    pendingRoomCode = code;
+    if (roomCodeEl) roomCodeEl.textContent = `Room: ${code}`;
+    updateConnectionStatus('waiting','Waiting for opponent');
+    const rooms = db.collection('rooms');
+    roomDocRef = rooms.doc(code);
+    const offerCandidates = roomDocRef.collection('offerCandidates');
+    const answerCandidates = roomDocRef.collection('answerCandidates');
+    peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    attachPeerConnectionStateListener();
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) offerCandidates.add(event.candidate.toJSON());
+    };
+    attachDataChannel(peerConnection.createDataChannel(DATA_CHANNEL_LABEL, { ordered: true }));
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    const timestamp = firebase.firestore && firebase.firestore.FieldValue && firebase.firestore.FieldValue.serverTimestamp ? firebase.firestore.FieldValue.serverTimestamp() : Date.now();
+    await roomDocRef.set({
+      offer: { type: offer.type, sdp: offer.sdp },
+      createdAt: timestamp,
+      version: MULTIPLAYER_PROTOCOL_VERSION
+    });
+    candidateUnsubs.push(answerCandidates.onSnapshot((snapshot)=>{
+      snapshot.docChanges().forEach((change)=>{
+        if (change.type === 'added'){
+          const data = change.doc.data();
+          if (data) peerConnection.addIceCandidate(new RTCIceCandidate(data));
+        }
+      });
+    }));
+    roomUnsub = roomDocRef.onSnapshot(async (snapshot)=>{
+      const data = snapshot.data();
+      if (!data) return;
+      if (data.answer && !peerConnection.currentRemoteDescription){
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+      }
+    });
+    log(`<b>Multiplayer:</b> Share room code <b>${code}</b> with your opponent.`);
+  } catch (err){
+    console.error(err);
+    log(`<span class="warn">Failed to host match: ${err.message}</span>`);
+    updateConnectionStatus('error','Error');
+    await leaveMultiplayer('Hosting failed.', { skipLog: true, deleteRoom: true });
+  }
+}
+
+async function joinOnlineMatch(){
+  if (onlineSession) return;
+  const raw = joinCodeInput ? joinCodeInput.value.trim().toUpperCase() : '';
+  if (!raw){
+    updateConnectionStatus('error','Enter code');
+    return;
+  }
+  try {
+    const db = await ensureFirebase();
+    const roomRef = db.collection('rooms').doc(raw);
+    const snapshot = await roomRef.get();
+    if (!snapshot.exists) throw new Error('Room not found');
+    const roomData = snapshot.data();
+    if (!roomData || !roomData.offer) throw new Error('Room is not ready yet');
+    startOnlineSession('guest');
+    pendingRoomCode = raw;
+    if (roomCodeEl) roomCodeEl.textContent = `Room: ${raw}`;
+    updateConnectionStatus('connecting','Connecting…');
+    roomDocRef = roomRef;
+    peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    attachPeerConnectionStateListener();
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) roomDocRef.collection('answerCandidates').add(event.candidate.toJSON());
+    };
+    peerConnection.ondatachannel = (event) => {
+      attachDataChannel(event.channel);
+    };
+    candidateUnsubs.push(roomDocRef.collection('offerCandidates').onSnapshot((snapshot)=>{
+      snapshot.docChanges().forEach((change)=>{
+        if (change.type === 'added'){
+          const data = change.doc.data();
+          if (data) peerConnection.addIceCandidate(new RTCIceCandidate(data));
+        }
+      });
+    }));
+    roomUnsub = roomDocRef.onSnapshot((snap)=>{
+      if (!snap.exists){
+        leaveMultiplayer('Host closed the room.', { deleteRoom: false });
+      }
+    });
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(roomData.offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    await roomDocRef.update({ answer: { type: answer.type, sdp: answer.sdp }, version: MULTIPLAYER_PROTOCOL_VERSION });
+    log('<b>Multiplayer:</b> Attempting to join match…');
+  } catch (err){
+    console.error(err);
+    log(`<span class="warn">Failed to join match: ${err.message}</span>`);
+    updateConnectionStatus('error','Error');
+    await leaveMultiplayer('Join failed.', { skipLog: true, deleteRoom: false });
+  }
+}
+
 /** ====================== Sound FX ====================== */
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playTone(freq, dur){
@@ -678,8 +1139,27 @@ function playWinSound(){ playTone(880,0.3); setTimeout(()=>playTone(660,0.3),150
 
 /** ====================== Boot ====================== */
 drawEdges(); drawNodes(); reset();
-document.getElementById('reset').onclick = reset;
-document.getElementById('undo').onclick = undo;
+updateConnectionStatus('offline');
+updateOnlineButtons();
+if (applyConfigBtn) applyConfigBtn.onclick = applyFirebaseConfigFromForm;
+if (hostBtn) hostBtn.onclick = () => { if (!onlineSession) hostOnlineMatch(); };
+if (joinBtn) joinBtn.onclick = () => { if (!onlineSession) joinOnlineMatch(); };
+if (leaveBtn) leaveBtn.onclick = async () => {
+  if (!onlineSession) {
+    log('<b>Multiplayer:</b> No online match to leave.');
+    return;
+  }
+  if (peerConnected) sendPeerMessage('leave', { reason: 'Peer left the match.' });
+  await leaveMultiplayer('You left the online match.', { deleteRoom: isHost, keepJoinCode: true });
+};
+if (resetBtn) resetBtn.onclick = () => {
+  if (onlineSession){
+    log('<b>Multiplayer:</b> Reset disabled while connected online.');
+    return;
+  }
+  reset();
+};
+if (undoBtn) undoBtn.onclick = undo;
 analyzeBtn.onclick = analyzeGame;
 analysisPrev.onclick = () => showAnalysisStep(analysisIdx-1);
 analysisNext.onclick = () => showAnalysisStep(analysisIdx+1);
@@ -701,6 +1181,10 @@ analysisExit.onclick = () => {
   analyzeBtn.style.display='inline-block';
 };
 document.getElementById('mode').onclick = () => {
+  if (onlineSession){
+    log('<b>Multiplayer:</b> Bot toggle disabled during online play.');
+    return;
+  }
   botEnabled = !botEnabled;
   updateModeText();
 };

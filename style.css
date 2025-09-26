@@ -16,7 +16,26 @@
   .btn:hover{background:rgba(255,255,255,.12)}
   .btn:active{transform:translateY(1px)}
   select.pill{color:inherit;background:rgba(255,255,255,.07);backdrop-filter:blur(6px);padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.15);font-weight:600}
+  .btn.disabled{opacity:.45;pointer-events:none;cursor:default}
+  .pill-input{color:inherit;background:rgba(255,255,255,.07);backdrop-filter:blur(6px);padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.15);font-weight:600;min-width:140px}
+  .pill-input:focus{outline:none;border-color:rgba(59,209,255,.7);box-shadow:0 0 0 2px rgba(59,209,255,.15)}
+  .pill-input::placeholder{color:rgba(234,234,234,.5)}
   .row{display:flex;gap:8px;flex-wrap:wrap}
+  .online-controls{margin-top:6px}
+  .online-controls .pill{display:flex;align-items:center;gap:6px}
+  .status{font-weight:700;text-transform:uppercase;letter-spacing:.6px}
+  .status[data-state="offline"]{background:rgba(255,255,255,.05);color:#f4f4f4}
+  .status[data-state="waiting"]{background:rgba(255,191,77,.18);color:#ffdf99}
+  .status[data-state="connecting"]{background:rgba(59,209,255,.18);color:#9ae7ff}
+  .status[data-state="connected"]{background:rgba(138,255,122,.18);color:#c6ffbf}
+  .status[data-state="error"]{background:rgba(255,110,110,.2);color:#ffbbbb}
+  .config-card{margin-top:12px;padding:12px;border-radius:16px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;gap:10px}
+  .config-title{font-weight:700;font-size:14px;letter-spacing:.4px}
+  .config-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+  .config-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;opacity:.85}
+  .config-grid label input{width:100%}
+  .config-actions{align-items:center}
+  .pill.info{background:rgba(255,255,255,.05);font-weight:500}
   .title{font-weight:800;letter-spacing:.2px}
   #board{width:100%;max-width:720px;margin:0 auto;height:auto;aspect-ratio:3/4;background:radial-gradient(ellipse at center,#0b0f23 0%,#1b1e5a 55%,#2a2e8f 100%);
          border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.45);border:16px solid #f2f2f2;

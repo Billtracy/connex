@@ -40,21 +40,7 @@
           <div class="pill status" id="connection-status" data-state="offline">Offline</div>
           <div class="pill btn" id="leave-session">Leave</div>
         </div>
-        <div class="config-card">
-          <div class="config-title">Firebase Config</div>
-          <div class="config-grid" id="firebase-config-form">
-            <label>apiKey<input class="pill-input" data-firebase-key="apiKey" type="text" placeholder="Required" autocomplete="off" /></label>
-            <label>authDomain<input class="pill-input" data-firebase-key="authDomain" type="text" placeholder="project.firebaseapp.com" autocomplete="off" /></label>
-            <label>projectId<input class="pill-input" data-firebase-key="projectId" type="text" placeholder="project-id" autocomplete="off" /></label>
-            <label>storageBucket<input class="pill-input" data-firebase-key="storageBucket" type="text" placeholder="project.appspot.com" autocomplete="off" /></label>
-            <label>messagingSenderId<input class="pill-input" data-firebase-key="messagingSenderId" type="text" placeholder="Sender ID" autocomplete="off" /></label>
-            <label>appId<input class="pill-input" data-firebase-key="appId" type="text" placeholder="App ID" autocomplete="off" /></label>
-          </div>
-          <div class="row config-actions">
-            <div class="pill btn" id="apply-config">Apply Config</div>
-            <div class="pill info" id="config-status">Firebase: Not configured</div>
-          </div>
-        </div>
+
       </div>
     <svg id="board" viewBox="0 0 300 400">
       <g id="edges"></g>
@@ -92,6 +78,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
   window.FIREBASE_DEFAULT_CONFIG = {
+
     apiKey: "AIzaSyDegylfw3i3qBZaXVs6-asFriykDSb_VPg",
     authDomain: "flamesapp-3c88d.firebaseapp.com",
     projectId: "flamesapp-3c88d",

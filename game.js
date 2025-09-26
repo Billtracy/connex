@@ -45,6 +45,7 @@ const leaveBtn = document.getElementById('leave-session');
 const roomCodeEl = document.getElementById('room-code');
 const joinCodeInput = document.getElementById('join-code');
 const connectionStatusEl = document.getElementById('connection-status');
+
 const configStatusEl = document.getElementById('config-status');
 const applyConfigBtn = document.getElementById('apply-config');
 const firebaseInputs = document.querySelectorAll('[data-firebase-key]');
@@ -766,41 +767,11 @@ function updateConnectionStatus(state, message){
   connectionStatusEl.textContent = message || STATUS_LABELS[state] || state;
 }
 
-function readFirebaseConfigFromInputs(){
-  const base = { ...(window.FIREBASE_DEFAULT_CONFIG || {}) };
-  let hasValue = false;
-  firebaseInputs.forEach((input)=>{
-    const key = input.dataset.firebaseKey;
-    if (!key) return;
-    const value = input.value.trim();
-    if (value){ base[key] = value; hasValue = true; }
-  });
-  if (!hasValue && (!base || !base.apiKey)) return null;
-  return base;
-}
-
-function applyFirebaseConfigFromForm(){
-  const cfg = readFirebaseConfigFromInputs();
-  if (!cfg || !cfg.apiKey){
-    if (configStatusEl){
-      configStatusEl.textContent = 'Firebase: Missing apiKey';
-      configStatusEl.dataset.state = 'error';
-    }
-    return null;
-  }
-  firebaseConfig = cfg;
-  firebaseAppInstance = null;
-  firestoreDb = null;
-  if (configStatusEl){
-    configStatusEl.textContent = 'Firebase: Config saved';
-    configStatusEl.dataset.state = 'ready';
-  }
-  return cfg;
-}
-
 async function ensureFirebase(){
   if (firestoreDb) return firestoreDb;
-  const cfg = firebaseConfig || readFirebaseConfigFromInputs();
+  firebaseConfig = window.FIREBASE_DEFAULT_CONFIG || firebaseConfig;
+  const cfg = firebaseConfig;
+
   if (!cfg || !cfg.apiKey) throw new Error('Firebase configuration is incomplete.');
   if (typeof firebase === 'undefined') throw new Error('Firebase SDK not loaded.');
   if (!firebase.apps.length){
@@ -809,10 +780,6 @@ async function ensureFirebase(){
     firebaseAppInstance = firebase.app();
   }
   firestoreDb = firebase.firestore();
-  if (configStatusEl){
-    configStatusEl.textContent = 'Firebase: Connected';
-    configStatusEl.dataset.state = 'connected';
-  }
   return firestoreDb;
 }
 
@@ -1141,7 +1108,7 @@ function playWinSound(){ playTone(880,0.3); setTimeout(()=>playTone(660,0.3),150
 drawEdges(); drawNodes(); reset();
 updateConnectionStatus('offline');
 updateOnlineButtons();
-if (applyConfigBtn) applyConfigBtn.onclick = applyFirebaseConfigFromForm;
+
 if (hostBtn) hostBtn.onclick = () => { if (!onlineSession) hostOnlineMatch(); };
 if (joinBtn) joinBtn.onclick = () => { if (!onlineSession) joinOnlineMatch(); };
 if (leaveBtn) leaveBtn.onclick = async () => {

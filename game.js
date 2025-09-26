@@ -46,6 +46,10 @@ const roomCodeEl = document.getElementById('room-code');
 const joinCodeInput = document.getElementById('join-code');
 const connectionStatusEl = document.getElementById('connection-status');
 
+const configStatusEl = document.getElementById('config-status');
+const applyConfigBtn = document.getElementById('apply-config');
+const firebaseInputs = document.querySelectorAll('[data-firebase-key]');
+
 
 svg.addEventListener('click',(ev)=>{
   if (analysisMode) return;
@@ -767,6 +771,7 @@ async function ensureFirebase(){
   if (firestoreDb) return firestoreDb;
   firebaseConfig = window.FIREBASE_DEFAULT_CONFIG || firebaseConfig;
   const cfg = firebaseConfig;
+
   if (!cfg || !cfg.apiKey) throw new Error('Firebase configuration is incomplete.');
   if (typeof firebase === 'undefined') throw new Error('Firebase SDK not loaded.');
   if (!firebase.apps.length){
@@ -1103,6 +1108,7 @@ function playWinSound(){ playTone(880,0.3); setTimeout(()=>playTone(660,0.3),150
 drawEdges(); drawNodes(); reset();
 updateConnectionStatus('offline');
 updateOnlineButtons();
+
 if (hostBtn) hostBtn.onclick = () => { if (!onlineSession) hostOnlineMatch(); };
 if (joinBtn) joinBtn.onclick = () => { if (!onlineSession) joinOnlineMatch(); };
 if (leaveBtn) leaveBtn.onclick = async () => {
